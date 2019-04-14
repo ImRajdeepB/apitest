@@ -44,3 +44,13 @@ Returns an array of places within 5km radius of queried point using postgres ear
 Query Parameters:
 
 `?latitude=28.6333&longitude=77.2167`
+
+### Get Places within 5km (self computed)
+
+`GET /api/get_using_self`
+
+Returns an array of places within 5km radius of queried point.
+
+Query Parameters:
+
+`?latitude=28.6333&longitude=77.2167`
