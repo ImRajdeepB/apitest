@@ -1,10 +1,10 @@
-from flask import Flask, session, jsonify
+from flask import Flask, session, jsonify, request
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy.orm.attributes import QueryableAttribute
 import os
 import json
 from marshmallow import Schema, fields, pprint
-
+from sqlalchemy import func
 
 app = Flask(__name__)
 # app.config.from_object(os.environ['APP_SETTINGS'])
@@ -12,123 +12,6 @@ app.config['JSONIFY_PRETTYPRINT_REGULAR'] = True
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://localhost/mydb'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-
-# from models import Result
-# from models import Zips
-
-
-# class BaseModel(db.Model):
-#     __abstract__ = True
-
-#     def to_dict(self, show=None, _hide=[], _path=None):
-#         """Return a dictionary representation of this model."""
-
-#         show = show or []
-
-#         hidden = self._hidden_fields if hasattr(self, "_hidden_fields") else []
-#         default = self._default_fields if hasattr(
-#             self, "_default_fields") else []
-#         default.extend(['id', 'modified_at', 'created_at'])
-
-#         if not _path:
-#             _path = self.__tablename__.lower()
-
-#             def prepend_path(item):
-#                 item = item.lower()
-#                 if item.split(".", 1)[0] == _path:
-#                     return item
-#                 if len(item) == 0:
-#                     return item
-#                 if item[0] != ".":
-#                     item = ".%s" % item
-#                 item = "%s%s" % (_path, item)
-#                 return item
-
-#             _hide[:] = [prepend_path(x) for x in _hide]
-#             show[:] = [prepend_path(x) for x in show]
-
-#         columns = self.__table__.columns.keys()
-#         relationships = self.__mapper__.relationships.keys()
-#         properties = dir(self)
-
-#         ret_data = {}
-
-#         for key in columns:
-#             if key.startswith("_"):
-#                 continue
-#             check = "%s.%s" % (_path, key)
-#             if check in _hide or key in hidden:
-#                 continue
-#             if check in show or key in default:
-#                 ret_data[key] = getattr(self, key)
-
-#         for key in relationships:
-#             if key.startswith("_"):
-#                 continue
-#             check = "%s.%s" % (_path, key)
-#             if check in _hide or key in hidden:
-#                 continue
-#             if check in show or key in default:
-#                 _hide.append(check)
-#                 is_list = self.__mapper__.relationships[key].uselist
-#                 if is_list:
-#                     items = getattr(self, key)
-#                     if self.__mapper__.relationships[key].query_class is not None:
-#                         if hasattr(items, "all"):
-#                             items = items.all()
-#                     ret_data[key] = []
-#                     for item in items:
-#                         ret_data[key].append(
-#                             item.to_dict(
-#                                 show=list(show),
-#                                 _hide=list(_hide),
-#                                 _path=("%s.%s" % (_path, key.lower())),
-#                             )
-#                         )
-#                 else:
-#                     if (
-#                         self.__mapper__.relationships[key].query_class is not None
-#                         or self.__mapper__.relationships[key].instrument_class
-#                         is not None
-#                     ):
-#                         item = getattr(self, key)
-#                         if item is not None:
-#                             ret_data[key] = item.to_dict(
-#                                 show=list(show),
-#                                 _hide=list(_hide),
-#                                 _path=("%s.%s" % (_path, key.lower())),
-#                             )
-#                         else:
-#                             ret_data[key] = None
-#                     else:
-#                         ret_data[key] = getattr(self, key)
-
-#         for key in list(set(properties) - set(columns) - set(relationships)):
-#             if key.startswith("_"):
-#                 continue
-#             if not hasattr(self.__class__, key):
-#                 continue
-#             attr = getattr(self.__class__, key)
-#             if not (isinstance(attr, property) or isinstance(attr, QueryableAttribute)):
-#                 continue
-#             check = "%s.%s" % (_path, key)
-#             if check in _hide or key in hidden:
-#                 continue
-#             if check in show or key in default:
-#                 val = getattr(self, key)
-#                 if hasattr(val, "to_dict"):
-#                     ret_data[key] = val.to_dict(
-#                         show=list(show),
-#                         _hide=list(_hide), _path=("%s.%s" % (_path, key.lower()))
-#                         _path=("%s.%s" % (path, key.lower())),
-#                     )
-#                 else:
-#                     try:
-#                         ret_data[key] = json.loads(json.dumps(val))
-#                     except:
-#                         pass
-
-#         return ret_data
 
 
 class Mapping(db.Model):
@@ -140,17 +23,25 @@ class Mapping(db.Model):
     longitude = db.Column(db.Float(), nullable=False)
     accuracy = db.Column(db.Integer(), nullable=True)
 
+    def __init__(self, key, place_name, admin_name1, latitude, longitude, accuracy):
+        self.key = key
+        self.place_name = place_name
+        self.admin_name1 = admin_name1
+        self.latitude = latitude
+        self.longitude = longitude
+        self.accuracy = accuracy
+
     def __repr__(self):
         return '<Place %r>' % self.place_name
 
+    def approx(self, latitude, longitude):
+        return (round(latitude, 2), round(longitude, 2))
 
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False)
-    email = db.Column(db.String(120), unique=True, nullable=False)
 
-    def __repr__(self):
-        return '<User %r>' % self.username
+class MappingSchema(Schema):
+    class Meta:
+        fields = ('key', 'place_name', 'admin_name1',
+                  'latitude', 'longitude', 'accuracy')
 
 
 @app.route('/')
@@ -158,32 +49,64 @@ def hello():
     return "Hello World!"
 
 
-# @app.route('/<name>')
-# def hello_name(name):
-#     return "Hello {}!".format(name)
-
-@app.route('/api')
-def place():
-    # return jsonify(json_list=Mapping.query.all())
-    # print(Mapping.query.all())
-    # return Mapping.query.all()
+@app.route('/api', methods=['GET'])
+def get_all():
     resp = []
     # for u in db.session.query(Mapping).all():
     for u in Mapping.query.all():
         resp.append(u.__dict__)
         td = dict(u.__dict__)
-        # print(json.dumps(u.__dict__))
-        # print(td.pop('_sa_instance_state', None))
-        # print(td)
-    # print(json.dumps(resp))
+
     for r in resp:
         del r['_sa_instance_state']
-    print(resp)
-    return (jsonify(resp))
+
+    return jsonify(resp)
 
 
-@app.route('/post_location', methods=['GET', 'POST'])
+@app.route('/api/post_location', methods=['GET', 'POST'])
 def post_location():
+    key = request.json['key']
+    place_name = request.json['place_name']
+    admin_name1 = request.json['admin_name1']
+    latitude = request.json['latitude']
+    longitude = request.json['longitude']
+    accuracy = request.json['accuracy']
+    latR = round(latitude, 2)
+    lonR = round(longitude, 2)
+
+    try:
+        new_mp = Mapping(key, place_name, admin_name1,
+                         latitude, longitude, accuracy)
+    except:
+        return 'This location already exists'
+
+    db.session.add(new_mp)
+    db.session.commit()
+
+    return jsonify(new_mp)
+
+
+@app.route('/api/get_using_postgres', methods=['GET'])
+def get_using_postgres():
+    try:
+        lat = float(request.args.get('latitude'))
+        lon = float(request.args.get('longitude'))
+    except:
+        return 'Please provide latitude and longitude'
+    req_loc = func.earth_box(func.ll_to_earth(lat, lon), 5000)
+    loc_company = func.ll_to_earth(Mapping.latitude, Mapping.longitude)
+    print(loc_company)
+    result = Mapping.query.filter(req_loc.op("@>")(loc_company))
+    print(result)
+    mp_schema = MappingSchema(many=True)
+    print(mp_schema)
+    output = mp_schema.dump(result).data
+    print(output)
+    return jsonify(output)
+
+
+@app.route('/api/get_using_self', methods=['GET'])
+def get_using_self():
     pass
 
 
