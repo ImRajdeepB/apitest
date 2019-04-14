@@ -5,6 +5,10 @@ import os
 import json
 from marshmallow import Schema, fields, pprint
 from sqlalchemy import func
+from functools import partial
+from operator import is_not
+from math import radians, cos, sin, asin, sqrt
+
 
 app = Flask(__name__)
 # app.config.from_object(os.environ['APP_SETTINGS'])
@@ -93,21 +97,79 @@ def get_using_postgres():
         lon = float(request.args.get('longitude'))
     except:
         return 'Please provide latitude and longitude'
+
     req_loc = func.earth_box(func.ll_to_earth(lat, lon), 5000)
     loc_company = func.ll_to_earth(Mapping.latitude, Mapping.longitude)
-    print(loc_company)
     result = Mapping.query.filter(req_loc.op("@>")(loc_company))
-    print(result)
     mp_schema = MappingSchema(many=True)
-    print(mp_schema)
     output = mp_schema.dump(result).data
-    print(output)
+
     return jsonify(output)
 
 
 @app.route('/api/get_using_self', methods=['GET'])
 def get_using_self():
-    pass
+    my_q = db.session.query(Mapping.key, Mapping.place_name, Mapping.admin_name1,
+                            Mapping.latitude, Mapping.longitude, Mapping.accuracy).all()
+    try:
+        lat = float(request.args.get('latitude'))
+        lon = float(request.args.get('longitude'))
+    except:
+        return 'Please provide latitude and longitude'
+
+    lt = []
+    ln = []
+    for i in range(len(my_q)):
+        x = my_q[i][3]
+        y = my_q[i][4]
+        if x != None:
+            lt.append(float(x))
+        else:
+            lt.append(x)
+        if y != None:
+            ln.append(float(y))
+        else:
+            ln.append(y)
+
+    lt = list(filter(partial(is_not, None), lt))
+    ln = list(filter(partial(is_not, None), ln))
+    latie = list(map(lambda x: radians(x), lt))
+    longe = list(map(lambda x: radians(x), ln))
+    lon, lat = map(radians, [lon, lat])
+
+    res = []
+    for i in range(len(latie)):
+        # try:
+        dlon = lon - longe[i]
+        dlat = lat - latie[i]
+        a = sin(dlat / 2) ** 2 + cos(lat) * \
+            cos(latie[i]) * sin(dlon / 2) ** 2
+        c = 2 * asin(sqrt(a))
+        r = 6371.0
+        y = r * c
+        res.append(y)
+        # except:
+        # pass
+    radius = 5.0
+
+    y = []
+    for i in res:
+        if i <= radius:
+            iy = True  # Inside
+        else:
+            iy = False  # Outside
+        y.append(iy)
+
+    resLt = [b for a, b in zip(y, lt) if a == True]
+    resLn = [b for a, b in zip(y, ln) if a == True]
+
+    mo = Mapping.query.filter(Mapping.latitude.in_(
+        resLt), Mapping.longitude.in_(resLn)).all()
+
+    mp_schema = MappingSchema(many=True)
+    output = mp_schema.dump(mo).data
+
+    return jsonify(output)
 
 
 if __name__ == '__main__':
